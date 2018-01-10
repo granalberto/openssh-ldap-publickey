@@ -77,6 +77,7 @@ sub parse_config {
             push(@{$conf->{$key}}, $val);
         }
         elsif ($key =~ /^tls_.+/) {
+	    next if $key =~ /checkpeer/;
             map_tls_options($conf, $key, $val);
         }
         else {
@@ -95,12 +96,15 @@ sub parse_config {
 sub map_tls_options {
     my ($conf, $key, $val) = @_;
 
+#    print "conf: $conf, key: $key, val: $val\n";
+    
     my %map = (
         'tls_reqcert' => sub { $conf->{'verify'} = map_tls_reqcert(shift); },
         'tls_cacert' => sub { $conf->{'cafile'} = shift; },
         'tls_cacertdir' => sub { $conf->{'capath'} = shift; },
         'tls_cert' => sub { $conf->{'clientcert'} = shift; },
         'tls_key' => sub { $conf->{'clientkey'} = shift; },
+	'tls_cacertfile' => sub { $conf->{'cafile'} = shift; }
         );
     $map{$key}->($val);
 }
@@ -246,7 +250,7 @@ unless (
 my $log_level = $conf->{'openssh_ldap_loglevel'};
 my $logfile = $conf->{'openssh_ldap_logfile'} || $fallback_logfile;
 my $timeout = $conf->{'timeout'} || 10;
-my $nss_base_passwd = $conf->{'nss_base_passwd'} || [ { nss_base_passwd => "ou=People," .$conf->{'base'}, scope => undef } ];
+my $nss_base_passwd = $conf->{'nss_base_passwd'} || [ { nss_base_passwd => "cn=Users," .$conf->{'base'}, scope => undef } ];
 my ($mesg, $final_filter);
 $conf = check_credentials($conf, $secret_file);
 
@@ -286,9 +290,9 @@ $ARGV[0] =~ /[^a-zA-Z0-9._-]/ && die("bad characters in username");
 my $user = $ARGV[0];
 
 if ( $conf->{'pam_filter'} ){
-    $final_filter = "&(".$conf->{'pam_filter'}.")(uid=".$user.")";
+    $final_filter = "&(".$conf->{'pam_filter'}.")(sAMAccountName=".$user.")";
 } else {
-    $final_filter = 'uid='.$user;
+    $final_filter = 'sAMAccountName='.$user;
 }
 
 foreach my $entity (@$nss_base_passwd) {
@@ -298,7 +302,7 @@ foreach my $entity (@$nss_base_passwd) {
         base => $entity->{'nss_base_passwd'},
         filter => "$final_filter",
         defined($entity->{'scope'}) ? (scope => $entity->{'scope'}) : (),
-        attrs => ['sshPublicKey', 'sshPublickey']
+        attrs => ['sshPublicKeys', 'sshPublickeys']
     );
 
     $mesg = $ldap->search(%search_params);
